@@ -1,0 +1,72 @@
+{
+  "name": "bx-vscode",
+  "displayName": "BX Conversation Trace",
+  "description": "Structured chat logger for AI-assisted development sessions in VS Code.",
+  "version": "0.0.1",
+  "publisher": "bx-labs",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "AI"
+  ],
+  "activationEvents": [
+    "onChatParticipant:bx",
+    "onCommand:bx.init",
+    "onCommand:bx.start",
+    "onCommand:bx.summary",
+    "onCommand:bx.stop",
+    "onCommand:bx.status"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bx.init",
+        "title": "BX: Init Repository"
+      },
+      {
+        "command": "bx.start",
+        "title": "BX: Start Session"
+      },
+      {
+        "command": "bx.status",
+        "title": "BX: Show Session Status"
+      },
+      {
+        "command": "bx.summary",
+        "title": "BX: Generate Summary"
+      },
+      {
+        "command": "bx.stop",
+        "title": "BX: Stop Session"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "bx",
+        "name": "bx",
+        "fullName": "BX Conversation Trace",
+        "description": "Logs development chat interactions as structured BX events."
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^7.12.0",
+    "@typescript-eslint/parser": "^7.12.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5",
+    "@vscode/vsce": "^2.15.0"
+  }
+}
