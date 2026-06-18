@@ -1,8 +1,8 @@
 {
   "name": "bx-vscode",
-  "displayName": "BX Conversation Trace",
-  "description": "Structured chat logger for AI-assisted development sessions in VS Code.",
-  "version": "0.0.1",
+  "displayName": "BX Conversation Trace AI Proxy",
+  "description": "Observable AI proxy with explicit model selection and structured chat logging for VS Code.",
+  "version": "0.0.4",
   "publisher": "bx-labs",
   "license": "MIT",
   "engines": {
@@ -48,8 +48,8 @@
       {
         "id": "bx",
         "name": "bx",
-        "fullName": "BX Conversation Trace",
-        "description": "Logs development chat interactions as structured BX events."
+        "fullName": "BX AI Proxy",
+        "description": "Observable AI proxy that logs prompts, model responses and session metrics as structured BX events."
       }
     ]
   },

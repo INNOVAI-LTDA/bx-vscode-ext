@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BxEventStore } from './eventStore';
-import { BxChatEvent, BxSession } from './types';
+import { BxChatEvent, BxEventType, BxSession } from './types';
 import { calculateTextObservability } from './textMetrics';
 
 export class BxSessionManager {
@@ -71,7 +71,7 @@ export class BxSessionManager {
     return stopped;
   }
 
-  async logUserMessage(rawText: string): Promise<void> {
+  async logUserMessage(rawText: string): Promise<string> {
     if (!this.currentSession) {
       await this.start();
     }
@@ -94,24 +94,111 @@ export class BxSessionManager {
     };
 
     await this.store.appendEvent(event);
+    return event.id;
   }
 
-  async logAssistantResponse(summary: string, rawResponse?: string): Promise<void> {
+  async logAssistantResponse(
+    summary: string,
+    rawResponse?: string,
+    parentEventId?: string,
+    extraPayload?: Record<string, unknown>
+  ): Promise<string | undefined> {
     if (!this.currentSession) {
-      return;
+      return undefined;
     }
 
-    await this.store.appendEvent({
+    const event: BxChatEvent = {
       id: this.createEventId(),
       type: 'bx.chat.assistant_response',
       sessionId: this.currentSession.sessionId,
       timestamp: new Date().toISOString(),
+      parentEventId,
       payload: {
         summary,
         rawResponse,
-        observability: calculateTextObservability(rawResponse ?? summary)
+        observability: calculateTextObservability(rawResponse ?? summary),
+        ...extraPayload
       }
-    });
+    };
+
+    await this.store.appendEvent(event);
+    return event.id;
+  }
+
+  async logModelRequestStarted(parentEventId?: string): Promise<string | undefined> {
+    if (!this.currentSession) {
+      return undefined;
+    }
+
+    const event: BxChatEvent = {
+      id: this.createEventId(),
+      type: 'bx.model.request.started',
+      sessionId: this.currentSession.sessionId,
+      timestamp: new Date().toISOString(),
+      parentEventId,
+      payload: {}
+    };
+
+    await this.store.appendEvent(event);
+    return event.id;
+  }
+
+  async logModelRequestCompleted(payload: Record<string, unknown>, parentEventId?: string): Promise<string | undefined> {
+    if (!this.currentSession) {
+      return undefined;
+    }
+
+    const event: BxChatEvent = {
+      id: this.createEventId(),
+      type: 'bx.model.request.completed',
+      sessionId: this.currentSession.sessionId,
+      timestamp: new Date().toISOString(),
+      parentEventId,
+      payload
+    };
+
+    await this.store.appendEvent(event);
+    return event.id;
+  }
+
+  async logModelRequestFailed(message: string, parentEventId?: string, details?: Record<string, unknown>): Promise<string | undefined> {
+    if (!this.currentSession) {
+      return undefined;
+    }
+
+    const event: BxChatEvent = {
+      id: this.createEventId(),
+      type: 'bx.model.request.failed',
+      sessionId: this.currentSession.sessionId,
+      timestamp: new Date().toISOString(),
+      parentEventId,
+      payload: {
+        message,
+        ...details
+      }
+    };
+
+    await this.store.appendEvent(event);
+    return event.id;
+  }
+
+
+  async logObservation(type: BxEventType, payload: Record<string, unknown>, parentEventId?: string): Promise<string | undefined> {
+    if (!this.currentSession) {
+      return undefined;
+    }
+
+    const event: BxChatEvent = {
+      id: this.createEventId(),
+      type,
+      sessionId: this.currentSession.sessionId,
+      timestamp: new Date().toISOString(),
+      parentEventId,
+      payload
+    };
+
+    await this.store.appendEvent(event);
+    return event.id;
   }
 
   private createSessionId(goal?: string): string {

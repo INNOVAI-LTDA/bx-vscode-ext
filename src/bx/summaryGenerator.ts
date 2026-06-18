@@ -1,13 +1,23 @@
 import { BxChatEvent } from './types';
 
-function getObservabilityNumber(event: BxChatEvent, field: 'totalchars' | 'estimatedTokens'): number {
+function getObservability(event: BxChatEvent): Record<string, unknown> | undefined {
   const observability = event.payload.observability;
 
   if (!observability || typeof observability !== 'object') {
+    return undefined;
+  }
+
+  return observability as Record<string, unknown>;
+}
+
+function getObservabilityNumber(event: BxChatEvent, field: 'totalchars' | 'estimatedTokens' | 'latencyMs'): number {
+  const observability = getObservability(event);
+
+  if (!observability) {
     return 0;
   }
 
-  const value = (observability as Record<string, unknown>)[field];
+  const value = observability[field];
 
   return typeof value === 'number' ? value : 0;
 }
@@ -16,13 +26,13 @@ function getTokenCountingMethods(events: BxChatEvent[]): string[] {
   const methods = new Set<string>();
 
   for (const event of events) {
-    const observability = event.payload.observability;
+    const observability = getObservability(event);
 
-    if (!observability || typeof observability !== 'object') {
+    if (!observability) {
       continue;
     }
 
-    const method = (observability as Record<string, unknown>).tokenCountingMethod;
+    const method = observability.tokenCountingMethod;
 
     if (typeof method === 'string') {
       methods.add(method);
@@ -32,12 +42,37 @@ function getTokenCountingMethods(events: BxChatEvent[]): string[] {
   return Array.from(methods);
 }
 
+function getModelLabels(events: BxChatEvent[]): string[] {
+  const labels = new Set<string>();
+
+  for (const event of events) {
+    const model = event.payload.model;
+
+    if (!model || typeof model !== 'object') {
+      continue;
+    }
+
+    const modelRecord = model as Record<string, unknown>;
+    const vendor = typeof modelRecord.vendor === 'string' ? modelRecord.vendor : 'unknown_vendor';
+    const family = typeof modelRecord.family === 'string' ? modelRecord.family : undefined;
+    const name = typeof modelRecord.name === 'string' ? modelRecord.name : undefined;
+    const id = typeof modelRecord.id === 'string' ? modelRecord.id : undefined;
+
+    labels.add([vendor, family ?? name ?? id ?? 'unknown_model'].join('/'));
+  }
+
+  return Array.from(labels);
+}
 
 export function generateSummary(events: BxChatEvent[]): string {
   const started = events.find((event) => event.type === 'bx.session.started');
   const stopped = events.find((event) => event.type === 'bx.session.stopped');
   const userMessages = events.filter((event) => event.type === 'bx.chat.user_message');
   const assistantResponses = events.filter((event) => event.type === 'bx.chat.assistant_response');
+  const modelStarted = events.filter((event) => event.type === 'bx.model.request.started');
+  const modelCompleted = events.filter((event) => event.type === 'bx.model.request.completed');
+  const modelFailed = events.filter((event) => event.type === 'bx.model.request.failed');
+  const modelSelected = events.filter((event) => event.type === 'bx.model.selected');
   const conversationalEvents = [...userMessages, ...assistantResponses];
 
   const userTotalChars = userMessages.reduce((sum, event) => sum + getObservabilityNumber(event, 'totalchars'), 0);
@@ -45,6 +80,13 @@ export function generateSummary(events: BxChatEvent[]): string {
   const userEstimatedTokens = userMessages.reduce((sum, event) => sum + getObservabilityNumber(event, 'estimatedTokens'), 0);
   const assistantEstimatedTokens = assistantResponses.reduce((sum, event) => sum + getObservabilityNumber(event, 'estimatedTokens'), 0);
   const tokenCountingMethods = getTokenCountingMethods(conversationalEvents);
+  const modelLabels = getModelLabels([...assistantResponses, ...modelCompleted]);
+  const latencyValues = assistantResponses
+    .map((event) => getObservabilityNumber(event, 'latencyMs'))
+    .filter((value) => value > 0);
+  const averageLatencyMs = latencyValues.length
+    ? Math.round(latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length)
+    : 0;
 
   const intents = new Set<string>();
   const riskFlags = new Set<string>();
@@ -99,6 +141,17 @@ export function generateSummary(events: BxChatEvent[]): string {
   lines.push(`- tokenCountingMethod: ${tokenCountingMethods.length ? tokenCountingMethods.join(', ') : 'not available'}`);
   lines.push('');
 
+  lines.push('## AI Proxy Observability');
+  lines.push('');
+  lines.push(`- Model requests started: ${modelStarted.length}`);
+  lines.push(`- Model requests completed: ${modelCompleted.length}`);
+  lines.push(`- Model request failures: ${modelFailed.length}`);
+  lines.push(`- Explicit model selections: ${modelSelected.length}`);
+  lines.push(`- Models observed: ${modelLabels.length ? modelLabels.join(', ') : 'not available'}`);
+  lines.push(`- Average response latencyMs: ${averageLatencyMs || 'not available'}`);
+  lines.push(`- Billing available: false`);
+  lines.push('');
+
   lines.push('## Detected Intents');
   lines.push('');
   if (intents.size === 0) {
@@ -143,6 +196,27 @@ export function generateSummary(events: BxChatEvent[]): string {
       lines.push(`- ${event.timestamp} - User: ${String(event.payload.rawText ?? '')}`);
     }
 
+    if (event.type === 'bx.model.selected') {
+      const label = [event.payload.vendor, event.payload.family, event.payload.id].filter(Boolean).join('/');
+      lines.push(`- ${event.timestamp} - Model selected: ${label || 'unknown model'}.`);
+    }
+
+    if (event.type === 'bx.model.selection.cleared') {
+      lines.push(`- ${event.timestamp} - Model selection cleared.`);
+    }
+
+    if (event.type === 'bx.model.request.started') {
+      lines.push(`- ${event.timestamp} - Model request started.`);
+    }
+
+    if (event.type === 'bx.model.request.completed') {
+      lines.push(`- ${event.timestamp} - Model request completed.`);
+    }
+
+    if (event.type === 'bx.model.request.failed') {
+      lines.push(`- ${event.timestamp} - Model request failed: ${String(event.payload.message ?? 'unknown error')}`);
+    }
+
     if (event.type === 'bx.chat.assistant_response') {
       lines.push(`- ${event.timestamp} - BX: ${String(event.payload.summary ?? '')}`);
     }
@@ -156,7 +230,9 @@ export function generateSummary(events: BxChatEvent[]): string {
   lines.push('## Notes');
   lines.push('');
   lines.push('- This MVP logs only conversations routed through `@bx`.');
-  lines.push('- Code diff capture is intentionally out of scope for this first version.');
+  lines.push('- AI responses are called through the VS Code Language Model API when a provider is available.');
+  lines.push('- Token metrics are estimates based on `totalchars/4`, not provider billing.');
+  lines.push('- Code diff capture is intentionally out of scope for this version.');
   lines.push('- Risk detection is rule-based and should be treated as an early signal, not a final audit.');
   lines.push('');
 
